@@ -1,5 +1,8 @@
 package aes;
 
+import java.util.Arrays;
+import java.util.Base64;
+
 public class AesAlth {
 	private static final int Nb = 4; // number of columns (32-bit words) comprising the State
     private static final int Nk = 4; // number of 32-bit words comprising the Cipher Key
@@ -49,222 +52,190 @@ public class AesAlth {
 		    0xA0, 0xE0, 0x3B, 0x4D, 0xAE, 0x2A, 0xF5, 0xB0, 0xC8, 0xEB, 0xBB, 0x3C, 0x83, 0x53, 0x99, 0x61, // E
 		    0x17, 0x2B, 0x04, 0x7E, 0xBA, 0x77, 0xD6, 0x26, 0xE1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0C, 0x7D  // F
 	};
-    public static void main(String[] args) {
-        String plaintext = "Hello, World!";
-        String key = "Thats my Kung Fu";
+	private static final int[] rcon = {
+	        0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1B, 0x36
+	    };
+	
 
-        // Encrypt and decrypt
-        byte[] encrypted = encrypt(plaintext.getBytes(), key.getBytes());
-        System.out.println("Encrypted: " + bytesToHex(encrypted));
-
-        byte[] decrypted = decrypt(encrypted, key.getBytes());
-        System.out.println("Decrypted: " + new String(decrypted));
-    }
-
-    public static byte[] encrypt(byte[] input, byte[] key) {
-        // Add padding
-        int length = input.length;
-        int paddingLength = 16 - (length % 16);
-        byte[] paddedInput = new byte[length + paddingLength];
-        System.arraycopy(input, 0, paddedInput, 0, length);
-        for (int i = length; i < paddedInput.length; i++) {
-            paddedInput[i] = (byte) paddingLength;
-        }
-
-        // Key expansion
+	// Mã hóa một khối 128-bit
+    public static byte[] encrypt(byte[] plaintext, byte[] key) {
+        byte[] state = Arrays.copyOf(plaintext, plaintext.length);
         byte[] expandedKey = keyExpansion(key);
 
-        // Initial round key addition
-        byte[] state = addRoundKey(paddedInput, expandedKey, 0);
+        state = addRoundKey(state, expandedKey, 0);
 
-        // Main rounds
-        for (int round = 1; round < Nr; round++) {
+        for (int round = 1; round <= 9; round++) {
             state = subBytes(state);
             state = shiftRows(state);
             state = mixColumns(state);
             state = addRoundKey(state, expandedKey, round);
         }
 
-        // Final round
         state = subBytes(state);
         state = shiftRows(state);
-        state = addRoundKey(state, expandedKey, Nr);
+        state = addRoundKey(state, expandedKey, 10);
 
         return state;
     }
 
-    public static byte[] decrypt(byte[] input, byte[] key) {
-        // Key expansion
+    // Giải mã một khối 128-bit
+    public static byte[] decrypt(byte[] ciphertext, byte[] key) {
+        byte[] state = Arrays.copyOf(ciphertext, ciphertext.length);
         byte[] expandedKey = keyExpansion(key);
 
-        // Initial round key addition
-        byte[] state = addRoundKey(input, expandedKey, Nr);
+        state = addRoundKey(state, expandedKey, 10);
 
-        // Main rounds
-        for (int round = Nr - 1; round > 0; round--) {
+        for (int round = 9; round >= 1; round--) {
             state = invShiftRows(state);
             state = invSubBytes(state);
             state = addRoundKey(state, expandedKey, round);
             state = invMixColumns(state);
         }
 
-        // Final round
         state = invShiftRows(state);
         state = invSubBytes(state);
         state = addRoundKey(state, expandedKey, 0);
 
-        // Remove padding
-        int paddingLength = state[state.length - 1];
-        byte[] unpaddedState = new byte[state.length - paddingLength];
-        System.arraycopy(state, 0, unpaddedState, 0, unpaddedState.length);
-
-        return unpaddedState;
+        return state;
     }
 
-    public static byte[] keyExpansion(byte[] key) {
-        int keySize = Nk * 4;
-        byte[] expandedKey = new byte[Nb * (Nr + 1) * 4];
-        System.arraycopy(key, 0, expandedKey, 0, keySize);
+    // Hàm SubBytes (dùng S-box để thay thế các byte trong state)
+    private static byte[] subBytes(byte[] state) {
+        byte[] output = new byte[state.length];
+        for (int i = 0; i < state.length; i++) {
+            output[i] = (byte) sBox[state[i] & 0xFF];
+        }
+        return output;
+    }
 
-        byte[] temp = new byte[4];
-        int i = keySize;
+    // Hàm InvSubBytes (dùng Inverse S-box để thay thế các byte trong state)
+    private static byte[] invSubBytes(byte[] state) {
+        byte[] output = new byte[state.length];
+        for (int i = 0; i < state.length; i++) {
+            output[i] = (byte) invSBox[state[i] & 0xFF];
+        }
+        return output;
+    }
 
-        while (i < expandedKey.length) {
-            System.arraycopy(expandedKey, i - 4, temp, 0, 4);
-
-            if (i % keySize == 0) {
-                temp = subWord(rotWord(temp));
-                temp[0] ^= rcon(i / keySize);
-            }
-
+    // Hàm ShiftRows
+    private static byte[] shiftRows(byte[] state) {
+        byte[] output = new byte[state.length];
+        for (int i = 0; i < 4; i++) {
             for (int j = 0; j < 4; j++) {
-                expandedKey[i] = (byte) (expandedKey[i - keySize] ^ temp[j]);
-                i++;
+                output[i + 4 * j] = state[(i + j) % 4 + 4 * j];
+            }
+        }
+        return output;
+    }
+
+    // Hàm InvShiftRows
+    private static byte[] invShiftRows(byte[] state) {
+        byte[] output = new byte[state.length];
+        for (int i = 0; i < 4; i++) {
+            for (int j = 0; j < 4; j++) {
+                output[(i + j) % 4 + 4 * j] = state[i + 4 * j];
+            }
+        }
+        return output;
+    }
+
+    // Hàm MixColumns
+    private static byte[] mixColumns(byte[] state) {
+        byte[] output = new byte[state.length];
+        for (int i = 0; i < 4; i++) {
+            int col = i * 4;
+            output[col] = (byte) (gfMul(state[col], 2) ^ gfMul(state[col + 1], 3) ^ state[col + 2] ^ state[col + 3]);
+            output[col + 1] = (byte) (state[col] ^ gfMul(state[col + 1], 2) ^ gfMul(state[col + 2], 3) ^ state[col + 3]);
+            output[col + 2] = (byte) (state[col] ^ state[col + 1] ^ gfMul(state[col + 2], 2) ^ gfMul(state[col + 3], 3));
+            output[col + 3] = (byte) (gfMul(state[col], 3) ^ state[col + 1] ^ state[col + 2] ^ gfMul(state[col + 3], 2));
+        }
+        return output;
+    }
+
+    // Hàm InvMixColumns
+    private static byte[] invMixColumns(byte[] state) {
+        byte[] output = new byte[state.length];
+        for (int i = 0; i < 4; i++) {
+            int col = i * 4;
+            output[col] = (byte) (gfMul(state[col], 14) ^ gfMul(state[col + 1], 11) ^ gfMul(state[col + 2], 13) ^ gfMul(state[col + 3], 9));
+            output[col + 1] = (byte) (gfMul(state[col], 9) ^ gfMul(state[col + 1], 14) ^ gfMul(state[col + 2], 11) ^ gfMul(state[col + 3], 13));
+            output[col + 2] = (byte) (gfMul(state[col], 13) ^ gfMul(state[col + 1], 9) ^ gfMul(state[col + 2], 14) ^ gfMul(state[col + 3], 11));
+            output[col + 3] = (byte) (gfMul(state[col], 11) ^ gfMul(state[col + 1], 13) ^ gfMul(state[col + 2], 9) ^ gfMul(state[col + 3], 14));
+        }
+        return output;
+    }
+
+    // Hàm KeyExpansion
+    private static byte[] keyExpansion(byte[] key) {
+        byte[] expandedKey = new byte[176];
+        System.arraycopy(key, 0, expandedKey, 0, 16);
+        for (int i = 16; i < expandedKey.length; i += 4) {
+            byte[] temp = Arrays.copyOfRange(expandedKey, i - 4, i);
+            if (i % 16 == 0) {
+                temp = subWord(rotWord(temp));
+                temp[0] ^= rcon[i / 16 - 1];
+            }
+            for (int j = 0; j < 4; j++) {
+                expandedKey[i + j] = (byte) (expandedKey[i + j - 16] ^ temp[j]);
             }
         }
         return expandedKey;
     }
 
-    private static byte[] subWord(byte[] word) {
-        byte[] result = new byte[word.length];
-        for (int i = 0; i < word.length; i++) {
-            result[i] = (byte) sBox[word[i] & 0xFF];
+    // Hàm AddRoundKey
+    private static byte[] addRoundKey(byte[] state, byte[] key, int round) {
+        byte[] output = new byte[state.length];
+        int offset = round * 16;
+        for (int i = 0; i < state.length; i++) {
+            output[i] = (byte) (state[i] ^ key[offset + i]);
         }
-        return result;
+        return output;
     }
 
-    private static byte[] rotWord(byte[] word) {
-        byte[] result = new byte[word.length];
-        System.arraycopy(word, 1, result, 0, word.length - 1);
-        result[word.length - 1] = word[0];
-        return result;
-    }
-
-    private static byte rcon(int num) {
-        int c = 1;
-        if (num == 0) return (byte) 0;
-
-        while (num != 1) {
-            int b = c & 0x80;
-            c <<= 1;
-            if (b == 0x80) c ^= 0x1b;
-            num--;
-        }
-        return (byte) c;
-    }
-	public static byte[] addRoundKey(byte[] state, byte[] roundKey, int round) {
-		for (int i = 0; i < state.length; i++) {
-	        state[i] ^= roundKey[round * Nb * 4 + i];
-	    }
-	    return state;
-    }
-
-    public static byte[] subBytes(byte[] state) {
-    	for (int i = 0; i < state.length; i++) {
-            state[i] = (byte) sBox[state[i] & 0xFF];
-        }
-        return state;
-    }
-
-    public static byte[] shiftRows(byte[] state) {
-    	byte[] newState = new byte[state.length];
-
-        for (int i = 0; i < Nb; i++) {
-            for (int j = 0; j < 4; j++) {
-                newState[i * 4 + j] = state[((i + j) % 4) * 4 + j];
-            }
-        }
-        return newState;
-    }
-
-    public static byte[] mixColumns(byte[] state) {
-    	int[] t = new int[4];
-        for (int i = 0; i < Nb; i++) {
-            for (int j = 0; j < 4; j++) {
-                t[j] = state[i * 4 + j] & 0xFF;
-            }
-            state[i * 4] = (byte) (mul(0x02, t[0]) ^ mul(0x03, t[1]) ^ t[2] ^ t[3]);
-            state[i * 4 + 1] = (byte) (t[0] ^ mul(0x02, t[1]) ^ mul(0x03, t[2]) ^ t[3]);
-            state[i * 4 + 2] = (byte) (t[0] ^ t[1] ^ mul(0x02, t[2]) ^ mul(0x03, t[3]));
-            state[i * 4 + 3] = (byte) (mul(0x03, t[0]) ^ t[1] ^ t[2] ^ mul(0x02, t[3]));
-        }
-        return state;
-    }
-
-    private static int mul(int i, int j) {
-    	int p = 0;
-        for (int i1 = 0; i1 < 8; i1++) {
+    // Các hàm trợ giúp
+    private static int gfMul(int a, int b) {
+        int p = 0;
+        for (int i = 0; i < 8; i++) {
             if ((b & 1) != 0) p ^= a;
             boolean hiBitSet = (a & 0x80) != 0;
             a <<= 1;
             if (hiBitSet) a ^= 0x1b;
             b >>= 1;
         }
-        return p;
-	}
-
-	public static byte[] invSubBytes(byte[] state) {
-		for (int i = 0; i < state.length; i++) {
-	        state[i] = (byte) invSBox[state[i] & 0xFF];
-	    }
-	    return state;
+        return p & 0xFF;
     }
 
-    public static byte[] invShiftRows(byte[] state) {
-    	byte[] newState = new byte[state.length];
-
-        for (int i = 0; i < Nb; i++) {
-            for (int j = 0; j < 4; j++) {
-                newState[i * 4 + j] = state[((i - j + 4) % 4) * 4 + j];
-            }
-        }
-        return newState;
+    private static byte[] rotWord(byte[] word) {
+        return new byte[]{word[1], word[2], word[3], word[0]};
     }
 
-    public static byte[] invMixColumns(byte[] state) {
-    	int[] t = new int[4];
-        for (int i = 0; i < Nb; i++) {
-            for (int j = 0; j < 4; j++) {
-                t[j] = state[i * 4 + j] & 0xFF;
-            }
-
-            state[i * 4] = (byte) (mul(0x0e, t[0]) ^ mul(0x0b, t[1]) ^ mul(0x0d, t[2]) ^ mul(0x09, t[3]));
-            state[i * 4 + 1] = (byte) (mul(0x09, t[0]) ^ mul(0x0e, t[1]) ^ mul(0x0b, t[2]) ^ mul(0x0d, t[3]));
-            state[i * 4 + 2] = (byte) (mul(0x0d, t[0]) ^ mul(0x09, t[1]) ^ mul(0x0e, t[2]) ^ mul(0x0b, t[3]));
-            state[i * 4 + 3] = (byte) (mul(0x0b, t[0]) ^ mul(0x0d, t[1]) ^ mul(0x09, t[2]) ^ mul(0x0e, t[3]));
+    private static byte[] subWord(byte[] word) {
+        byte[] output = new byte[word.length];
+        for (int i = 0; i < word.length; i++) {
+            output[i] = (byte) sBox[word[i] & 0xFF];
         }
-        return state;
+        return output;
     }
+ // Mã hóa thành chuỗi Base64
+    public static String encryptToString(byte[] plaintext, byte[] key) {
+        byte[] ciphertext = encrypt(plaintext, key);
+        return Base64.getEncoder().encodeToString(ciphertext); // Chuyển byte[] sang Base64 String
+    }
+ // Giải mã từ chuỗi Base64
+    public static byte[] decryptFromString(String ciphertextBase64, byte[] key) {
+        byte[] ciphertext = Base64.getDecoder().decode(ciphertextBase64); // Chuyển Base64 String về byte[]
+        return decrypt(ciphertext, key);
+    }
+    public static void main(String[] args) {
+    	byte[] plaintext = "toiyeunganhcntt1".getBytes(); // 16 bytes
+        byte[] key = "SimpleKey1234567".getBytes(); // 16 bytes
 
-    public static String bytesToHex(byte[] bytes) {
-        StringBuilder hexString = new StringBuilder();
-        for (byte b : bytes) {
-            String hex = Integer.toHexString(0xFF & b);
-            if (hex.length() == 1) {
-                hexString.append('0');
-            }
-            hexString.append(hex);
-        }
-        return hexString.toString();
+        // Mã hóa thành chuỗi Base64
+        String ciphertext = encryptToString(plaintext, key);
+        System.out.println("Mã Hóa: " + ciphertext);
+
+        // Giải mã từ chuỗi Base64
+        byte[] decrypted = decryptFromString(ciphertext, key);
+        System.out.println("Giải mã: " + new String(decrypted));
     }
 }
