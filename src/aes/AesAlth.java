@@ -59,28 +59,27 @@ public class AesAlth {
 
 	// Mã hóa một khối 128-bit
     public static byte[] encrypt(byte[] plaintext, byte[] key) {
-        byte[] state = Arrays.copyOf(plaintext, plaintext.length);
-        byte[] expandedKey = keyExpansion(key);
+    	 byte[] state = Arrays.copyOf(plaintext, plaintext.length);
+         byte[] expandedKey = keyExpansion(key);
 
-        state = addRoundKey(state, expandedKey, 0);
+         state = addRoundKey(state, expandedKey, 0);
 
-        for (int round = 1; round <= 9; round++) {
-            state = subBytes(state);
-            state = shiftRows(state);
-            state = mixColumns(state);
-            state = addRoundKey(state, expandedKey, round);
-        }
+         for (int round = 1; round <= 9; round++) {
+             state = subBytes(state);
+             state = shiftRows(state);
+             state = mixColumns(state);
+             state = addRoundKey(state, expandedKey, round);
+         }
 
-        state = subBytes(state);
-        state = shiftRows(state);
-        state = addRoundKey(state, expandedKey, 10);
+         state = subBytes(state);
+         state = shiftRows(state);
+         state = addRoundKey(state, expandedKey, 10);
 
-        return state;
+         return state;
     }
 
-    // Giải mã một khối 128-bit
     public static byte[] decrypt(byte[] ciphertext, byte[] key) {
-        byte[] state = Arrays.copyOf(ciphertext, ciphertext.length);
+    	byte[] state = Arrays.copyOf(ciphertext, ciphertext.length);
         byte[] expandedKey = keyExpansion(key);
 
         state = addRoundKey(state, expandedKey, 10);
@@ -98,8 +97,28 @@ public class AesAlth {
 
         return state;
     }
+    public static byte[] encryptBlocks(byte[] plaintext, byte[] key) {
+        byte[] paddedPlaintext = pad(plaintext);
+        byte[] ciphertext = new byte[paddedPlaintext.length];
 
-    // Hàm SubBytes (dùng S-box để thay thế các byte trong state)
+        for (int i = 0; i < paddedPlaintext.length; i += 16) {
+            byte[] block = Arrays.copyOfRange(paddedPlaintext, i, i + 16);
+            byte[] encryptedBlock = encrypt(block, key);
+            System.arraycopy(encryptedBlock, 0, ciphertext, i, 16);
+        }
+        return ciphertext;
+    }
+    public static byte[] decryptBlocks(byte[] ciphertext, byte[] key) {
+        byte[] decrypted = new byte[ciphertext.length];
+
+        for (int i = 0; i < ciphertext.length; i += 16) {
+            byte[] block = Arrays.copyOfRange(ciphertext, i, i + 16);
+            byte[] decryptedBlock = decrypt(block, key);
+            System.arraycopy(decryptedBlock, 0, decrypted, i, 16);
+        }
+        return unpad(decrypted);
+    }
+
     private static byte[] subBytes(byte[] state) {
         byte[] output = new byte[state.length];
         for (int i = 0; i < state.length; i++) {
@@ -108,7 +127,6 @@ public class AesAlth {
         return output;
     }
 
-    // Hàm InvSubBytes (dùng Inverse S-box để thay thế các byte trong state)
     private static byte[] invSubBytes(byte[] state) {
         byte[] output = new byte[state.length];
         for (int i = 0; i < state.length; i++) {
@@ -117,29 +135,40 @@ public class AesAlth {
         return output;
     }
 
-    // Hàm ShiftRows
     private static byte[] shiftRows(byte[] state) {
-        byte[] output = new byte[state.length];
-        for (int i = 0; i < 4; i++) {
-            for (int j = 0; j < 4; j++) {
-                output[i + 4 * j] = state[(i + j) % 4 + 4 * j];
-            }
+        byte[] output = Arrays.copyOf(state, state.length);
+        for (int i = 1; i < 4; i++) {
+            System.arraycopy(state, i * 4, output, i * 4, 4);
+            rotateLeft(output, i * 4, i);
         }
         return output;
     }
 
-    // Hàm InvShiftRows
     private static byte[] invShiftRows(byte[] state) {
-        byte[] output = new byte[state.length];
-        for (int i = 0; i < 4; i++) {
-            for (int j = 0; j < 4; j++) {
-                output[(i + j) % 4 + 4 * j] = state[i + 4 * j];
-            }
+        byte[] output = Arrays.copyOf(state, state.length);
+        for (int i = 1; i < 4; i++) {
+            System.arraycopy(state, i * 4, output, i * 4, 4);
+            rotateRight(output, i * 4, i);
         }
         return output;
     }
 
-    // Hàm MixColumns
+    private static void rotateLeft(byte[] array, int offset, int steps) {
+        for (int i = 0; i < steps; i++) {
+            byte temp = array[offset];
+            System.arraycopy(array, offset + 1, array, offset, 3);
+            array[offset + 3] = temp;
+        }
+    }
+
+    private static void rotateRight(byte[] array, int offset, int steps) {
+        for (int i = 0; i < steps; i++) {
+            byte temp = array[offset + 3];
+            System.arraycopy(array, offset, array, offset + 1, 3);
+            array[offset] = temp;
+        }
+    }
+
     private static byte[] mixColumns(byte[] state) {
         byte[] output = new byte[state.length];
         for (int i = 0; i < 4; i++) {
@@ -152,7 +181,6 @@ public class AesAlth {
         return output;
     }
 
-    // Hàm InvMixColumns
     private static byte[] invMixColumns(byte[] state) {
         byte[] output = new byte[state.length];
         for (int i = 0; i < 4; i++) {
@@ -165,15 +193,15 @@ public class AesAlth {
         return output;
     }
 
-    // Hàm KeyExpansion
     private static byte[] keyExpansion(byte[] key) {
         byte[] expandedKey = new byte[176];
         System.arraycopy(key, 0, expandedKey, 0, 16);
+
         for (int i = 16; i < expandedKey.length; i += 4) {
             byte[] temp = Arrays.copyOfRange(expandedKey, i - 4, i);
             if (i % 16 == 0) {
                 temp = subWord(rotWord(temp));
-                temp[0] ^= rcon[i / 16 - 1];
+                temp[0] ^= rcon[(i / 16) - 1];
             }
             for (int j = 0; j < 4; j++) {
                 expandedKey[i + j] = (byte) (expandedKey[i + j - 16] ^ temp[j]);
@@ -182,17 +210,19 @@ public class AesAlth {
         return expandedKey;
     }
 
-    // Hàm AddRoundKey
     private static byte[] addRoundKey(byte[] state, byte[] key, int round) {
         byte[] output = new byte[state.length];
         int offset = round * 16;
+
+        if (offset + state.length > key.length) {
+            throw new IllegalArgumentException("Invalid round or key length.");
+        }
+
         for (int i = 0; i < state.length; i++) {
             output[i] = (byte) (state[i] ^ key[offset + i]);
         }
         return output;
     }
-
-    // Các hàm trợ giúp
     private static int gfMul(int a, int b) {
         int p = 0;
         for (int i = 0; i < 8; i++) {
@@ -216,26 +246,39 @@ public class AesAlth {
         }
         return output;
     }
- // Mã hóa thành chuỗi Base64
+
+    private static byte[] pad(byte[] bytes) {
+        int paddingLength = 16 - (bytes.length % 16);
+        byte[] padded = Arrays.copyOf(bytes, bytes.length + paddingLength);
+        Arrays.fill(padded, bytes.length, padded.length, (byte) paddingLength);
+        return padded;
+    }
+
+    private static byte[] unpad(byte[] bytes) {
+        int paddingLength = bytes[bytes.length - 1];
+        return Arrays.copyOf(bytes, bytes.length - paddingLength);
+    }
+
     public static String encryptToString(byte[] plaintext, byte[] key) {
-        byte[] ciphertext = encrypt(plaintext, key);
-        return Base64.getEncoder().encodeToString(ciphertext); // Chuyển byte[] sang Base64 String
+    	byte[] ciphertext = encryptBlocks(plaintext, key);
+        return Base64.getEncoder().encodeToString(ciphertext);
     }
- // Giải mã từ chuỗi Base64
+
     public static byte[] decryptFromString(String ciphertextBase64, byte[] key) {
-        byte[] ciphertext = Base64.getDecoder().decode(ciphertextBase64); // Chuyển Base64 String về byte[]
-        return decrypt(ciphertext, key);
+    	byte[] ciphertext = Base64.getDecoder().decode(ciphertextBase64);
+        return decryptBlocks(ciphertext, key);
     }
+
     public static void main(String[] args) {
-    	byte[] plaintext = "toiyeunganhcntt1".getBytes(); // 16 bytes
+    	byte[] plaintext = "Đây là một chuỗi dài hơn 16 byte để kiểm tra mã hóa AES".getBytes();
         byte[] key = "SimpleKey1234567".getBytes(); // 16 bytes
 
-        // Mã hóa thành chuỗi Base64
+        // Mã hóa
         String ciphertext = encryptToString(plaintext, key);
-        System.out.println("Mã Hóa: " + ciphertext);
+        System.out.println("Ciphertext (Base64): " + ciphertext);
 
-        // Giải mã từ chuỗi Base64
+        // Giải mã
         byte[] decrypted = decryptFromString(ciphertext, key);
-        System.out.println("Giải mã: " + new String(decrypted));
+        System.out.println("Decrypted: " + new String(decrypted));
     }
 }
